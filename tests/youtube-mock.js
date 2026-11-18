@@ -8,6 +8,7 @@
       this.at = Date.now();
       this.allowed = false;
       this.volume = 75;
+      this.rate = 1;
       this.listeners = {};
       this.frame = document.createElement("iframe");
       this.frame.title = "YouTube test player";
@@ -36,6 +37,7 @@
             else this.playVideo();
           });
           button("YouTube Vollbild", () => this.frame.requestFullscreen());
+          button("YouTube 1,5×", () => this.setPlaybackRate(1.5));
           const seek = doc.createElement("input");
           seek.setAttribute("aria-label", "YouTube Position");
           seek.type = "range";
@@ -63,6 +65,7 @@
     load(video) {
       if (this.state !== -1) this.change(-1);
       this.videoId = video.videoId;
+      this.rate = 1;
       this.position = video.startSeconds;
       this.at = Date.now();
       this.bad = video.videoId === "yyyyyyyyyyy";
@@ -93,7 +96,16 @@
     pauseVideo() { this.position = this.getCurrentTime(); this.change(2); }
     stopVideo() { this.position = 0; this.change(-1); }
     seekTo(seconds) { this.position = seconds; this.at = Date.now(); }
-    getCurrentTime() { return this.position + (this.state === 1 ? (Date.now() - this.at) / 1000 : 0); }
+    getCurrentTime() { return this.position + (this.state === 1 ? (Date.now() - this.at) / 1000 * this.rate : 0); }
+    getPlaybackRate() { return this.rate; }
+    getAvailablePlaybackRates() { return [0.5, 1, 1.5, 2]; }
+    setPlaybackRate(rate) {
+      if (rate === this.rate) return;
+      this.position = this.getCurrentTime();
+      this.at = Date.now();
+      this.rate = rate;
+      this.config.events.onPlaybackRateChange?.({ data: rate, target: this });
+    }
     getPlayerState() { return this.state; }
     getVideoData() { return { video_id: this.videoId, title: this.videoId ? `Titel ${this.videoId}` : "" }; }
     getDuration() { return 120; }

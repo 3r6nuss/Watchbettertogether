@@ -24,17 +24,34 @@ h2 { font-size: 1.1rem; margin-bottom: 1rem; }
 .room-header h1 { font-size: 1.35rem; margin-bottom: .6rem; }
 .badge { border-radius: 20px; padding: .3rem .6rem; font-size: .75rem; background: #493a30; color: #f0cbab; }
 .badge.online { background: #213e33; color: #96e6c3; }
-.video-frame { aspect-ratio: 16 / 9; background: #05070c; border-radius: 12px; overflow: hidden; }
-.video-frame iframe { width: 100%; height: 100%; border: 0; }
+.video-frame { aspect-ratio: 16 / 9; min-height: 200px; position: relative; background: #05070c; border-radius: 12px; overflow: hidden; }
+.video-frame iframe { display: block; position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .player-status { font-size: .85rem; color: #9eabc1; margin: .8rem 0; }
 .player-hint { font-size: .85rem; color: #f3d38b; margin: .4rem 0; }
-.volume { display: flex; align-items: center; gap: .8rem; margin: 1rem 0; }
-.volume input { width: 140px; padding: 0; accent-color: #96e6c3; }
-.current-video { font-size: .85rem; }
-.controls { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: 1rem; }
-.controls output { min-width: 4rem; text-align: center; font-variant-numeric: tabular-nums; }
-.seek-form { display: flex; gap: .5rem; flex: 1; min-width: 180px; }
-.seek-form input { max-width: 140px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.icon-button { display: inline-grid; place-items: center; width: 2.65rem; height: 2.65rem; padding: 0; border: 1px solid #394256; border-radius: 10px; background: #242d41; text-decoration: none; }
+.icon-button svg { width: 1.25rem; height: 1.25rem; }
+a.icon-button:hover { background: #35415a; }
+.current-video { display: flex; gap: .5rem; align-items: baseline; margin: .9rem .15rem 0; font-size: .9rem; }
+.current-video a { color: #edf0f8; text-decoration: none; }
+.current-video a:hover { text-decoration: underline; }
+.current-video span { color: #96e6c3; }
+.controls { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: .55rem; margin-top: .65rem; padding: .6rem; border: 1px solid #344057; border-radius: 14px; background: linear-gradient(110deg, #263248, #181f30 75%); }
+.play-button { width: 3rem; }
+.timeline { display: flex; align-items: center; min-width: 0; gap: .6rem; padding-inline: .2rem; }
+.timeline input { min-width: 0; margin: 0; padding: 0; cursor: pointer; accent-color: #96e6c3; }
+.timeline input:disabled { cursor: not-allowed; }
+.timeline output { white-space: nowrap; font-size: .8rem; color: #c4cddd; font-variant-numeric: tabular-nums; }
+.rate-control { border: 1px solid #394256; border-radius: 9px; color: #edf0f8; background: #242d41; padding: .55rem .35rem; font: inherit; font-size: .85rem; cursor: pointer; }
+.rate-control:disabled { cursor: not-allowed; opacity: .5; }
+.rate-control:focus-visible { outline: 2px solid #96e6c3; outline-offset: 3px; }
+.invite-dialog { position: fixed; width: min(29rem, calc(100% - 2rem)); padding: 1.6rem; color: #edf0f8; background: #192031; border: 1px solid #3c465c; border-radius: 16px; }
+.invite-dialog::backdrop { background: #05070cbf; }
+.invite-dialog h2 { margin: .65rem 0; font-size: 1.6rem; }
+.invite-dialog > button { margin-top: .75rem; }
+.dialog-close { float: right; }
+.dialog-close button { padding: .25rem .65rem; font-size: 1.2rem; }
 .side-panel section { padding: 1.3rem; border: 1px solid #2c3549; border-radius: 12px; background: #192031; margin-bottom: 1rem; }
 .add-form { display: grid; gap: .7rem; margin-bottom: .8rem; }
 .queue { padding-left: 1.4rem; }
@@ -47,4 +64,10 @@ h2 { font-size: 1.1rem; margin-bottom: 1rem; }
 .error { background: #4a2530; color: #ffe4e6; border: 1px solid #89505f; border-radius: 9px; padding: .8rem; line-height: 1.5; margin: 1rem 0; }
 .error button { padding: .3rem .5rem; margin-left: .5rem; font-size: .8rem; }
 @media (max-width: 900px) { .room-layout { grid-template-columns: 1fr; padding: 1rem; gap: 1rem; } }
-@media (max-width: 420px) { .room-header { align-items: flex-start; } .room-header h1 { font-size: 1.1rem; } .room-header button { font-size: .8rem; } }
+@media (max-width: 420px) {
+  .room-header { align-items: flex-start; }
+  .room-header h1 { font-size: clamp(.85rem, 3.8vw, 1.1rem); }
+  .room-header button { font-size: .8rem; }
+  .timeline { flex-direction: column; align-items: stretch; gap: .2rem; }
+  .timeline output { text-align: center; }
+}

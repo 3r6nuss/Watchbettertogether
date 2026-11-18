@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const roomIdSchema = z.string().regex(/^[A-Za-z0-9_-]{32}$/);
 const idSchema = z.string().uuid();
+export const playbackRates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+export const playbackRateSchema = z.literal(playbackRates);
+export type PlaybackRate = z.infer<typeof playbackRateSchema>;
 export const joinSchema = z.object({
   roomId: roomIdSchema,
   name: z.string().trim().min(1).max(32),
@@ -11,6 +14,7 @@ export const playerCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("play"), instance: idSchema, position: z.number().finite().min(0).max(86400).optional() }),
   z.object({ type: z.literal("pause"), instance: idSchema, position: z.number().finite().min(0).max(86400).optional() }),
   z.object({ type: z.literal("seek"), instance: idSchema, position: z.number().finite().min(0).max(86400) }),
+  z.object({ type: z.literal("rate"), instance: idSchema, rate: playbackRateSchema }),
   z.object({ type: z.literal("next"), instance: idSchema }),
   z.object({ type: z.literal("load"), entryId: idSchema, instance: idSchema.nullable() }),
 ]);
@@ -31,6 +35,7 @@ export interface Playback {
   entry: VideoEntry;
   instance: string;
   playing: boolean;
+  rate: PlaybackRate;
   position: number;
   updatedAt: number;
 }
@@ -58,7 +63,7 @@ export interface ClientEvents {
 }
 
 export function positionAt(playback: Playback, serverTime: number): number {
-  return playback.position + (playback.playing ? Math.max(0, serverTime - playback.updatedAt) / 1000 : 0);
+  return playback.position + (playback.playing ? Math.max(0, serverTime - playback.updatedAt) / 1000 * playback.rate : 0);
 }
 
 export function parseYouTubeUrl(input: string): string | null {

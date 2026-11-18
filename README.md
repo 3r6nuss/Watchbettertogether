@@ -98,15 +98,28 @@ beheben statt das Datenvolume zu loeschen.
   Befehle dieser Person werden durch ihren zuletzt eingegangenen Befehl ersetzt.
   Ausserhalb des Fensters kann jeder normal steuern. Ein verworfener Befehl wird
   sichtbar gemeldet.
-- Queue-Aenderungen werden nacheinander verarbeitet. Erstes Video wird pausiert
-  geladen, weitere werden angehaengt. Alle duerfen umsortieren, entfernen,
+- Neue Raeume laden das [YouTube-IFrame-Beispielvideo](https://www.youtube.com/watch?v=M7lc1UVf-VE)
+  pausiert. Das bisherige Startvideo wird beim Neustart ersetzt, wenn es
+  noch mit normalem Tempo bei 0:00 pausiert ist; die Warteschlange bleibt
+  erhalten. Blockiert YouTube die Einbettung, bietet der Player einen direkten
+  YouTube-Link an. Weitere Videos werden
+  angehaengt; ist der Player leer, startet ein neu hinzugefuegtes Video direkt.
+  Queue-Aenderungen werden nacheinander verarbeitet. Alle duerfen umsortieren, entfernen,
   einzelne Queue-Videos direkt abspielen und weiterspringen.
 - Videoende schaltet genau einmal auf das naechste Video. Ist die Queue leer,
   wird der Player geleert. Der laufende Eintrag ist nicht Teil der Queue.
-- Native YouTube-Controls sind aktiviert, auch im Vollbild. Play, Pause und
-  Spulen synchronisieren den Raum; Vollbild und Lautstaerke bleiben lokal.
-  Die zusaetzlichen Bedienelemente unter dem Player funktionieren weiterhin.
-  Vom Server ausgeloeste Player-Aenderungen werden nicht als neue Befehle gesendet.
+- Native YouTube-Controls sind aktiviert, auch im Vollbild. YouTube blendet
+  sie bei Inaktivitaet aus und zeigt sie bei Mausbewegung oder Antippen des
+  Players wieder an. Die App laesst dem IFrame auch mobil mindestens 200 px
+  Hoehe. Play, Pause und
+  Spulen sowie die Wiedergabegeschwindigkeit bis 2x synchronisieren den Raum.
+  Die Leiste unter dem Video steuert den gleichen Raumzustand. Ein neues Video
+  startet mit 1x. Wenn YouTube das Raumtempo lokal nicht anbietet, meldet die
+  App das und gleicht die Position weiterhin ab. Vollbild und Lautstaerke
+  bleiben lokal.
+- Der erste Teilnehmer sieht einmal automatisch den Einladungslink; der
+  Einladungsbutton oeffnet ihn jederzeit erneut. Ohne eigene Eingabe wird
+  der zuletzt in diesem Tab verwendete Name oder `Gast` verwendet.
 - Bei Verbindungsverlust pausiert der lokale Player. Ein Reconnect innerhalb
   von 60 Sekunden behaelt den Rang mit einer tabbezogenen temporaeren Kennung.
   Danach oder nach bewusstem Verlassen wird ein neuer Rang vergeben.
@@ -142,11 +155,16 @@ Einbettung verhindern.
 
 Nur normale YouTube-Videos (Watch-, youtu.be-, Shorts- und Embed-Links).
 Keine Livestream-Synchronisierung, kein Playlist-Import, keine Downloads,
-kein Chat. Ein Livestream mit gewoehnlicher Watch-URL laesst sich ohne
-Metadaten-API nicht sicher vorab erkennen und bleibt nicht unterstuetzt.
+kein Chat. Ein direkt eingefuegter Livestream mit gewoehnlicher Watch-URL
+laesst sich nicht sicher vorab erkennen und bleibt nicht unterstuetzt.
 Links mit Playlist-Parametern importieren hoechstens das einzelne Video.
-Videotitel werden nicht extern abgerufen; Eintraege zeigen die Video-ID.
-Kein YouTube-API-Key benoetigt.
+
+Ein YouTube-API-Schluessel ist nicht noetig. Der kleine YouTube-Button oben
+oeffnet deine Startseite auf YouTube, wo dein dort
+angemeldetes Konto seine Empfehlungen anzeigt. Die App verknuepft keine
+Konten, da YouTube den personalisierten Startseiten-Feed nicht freigibt.
+Die Bildqualitaet waehlt YouTube pro Browser automatisch; sie laesst sich
+im nativen Player lokal einstellen, aber nicht per App fuer alle erzwingen.
 
 ## Konfiguration
 

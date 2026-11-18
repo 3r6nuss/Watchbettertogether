@@ -1,10 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseYouTubeUrl, positionAt } from "../shared/protocol.js";
-import type { Ack, Participant, PlayerCommand, QueueCommand, Snapshot } from "../shared/protocol.js";
+import type { Ack, Participant, Playback, PlayerCommand, QueueCommand, Snapshot } from "../shared/protocol.js";
 import { Store, type StoredRoom } from "./store.js";
 
 const EMPTY_TTL = 24 * 60 * 60 * 1000;
 const RECONNECT_TTL = 60_000;
+const DEFAULT_VIDEO_ID = "M7lc1UVf-VE";
+const LEGACY_DEFAULT_VIDEO_ID = "y6120QOlsfU";
 interface Member extends Participant { token: string; socketId: string | null; disconnectedAt: number | null }
 interface Pending { command: PlayerCommand; socketId: string; rank: number; ack: Ack }
 interface Room extends StoredRoom {
@@ -32,6 +34,11 @@ export class Rooms {
         continue;
       }
       if (saved.playback) {
+        if (saved.playback.entry.videoId === LEGACY_DEFAULT_VIDEO_ID && !saved.playback.playing &&
+            saved.playback.position === 0 && saved.playback.rate === 1) {
+          saved.playback.entry.videoId = DEFAULT_VIDEO_ID;
+          saved.playback.instance = randomUUID();
+        }
         saved.playback.playing = false;
         saved.playback.updatedAt = this.now();
       }
@@ -50,7 +57,10 @@ export class Rooms {
     this.cleanup();
     if (this.rooms.size >= this.maxRooms) throw new RoomError("Das Raumlimit ist erreicht. Bitte spaeter erneut versuchen.");
     const id = randomBytes(24).toString("base64url");
-    const room: Room = { id, revision: 0, playback: null, queue: [], emptySince: this.now(),
+    const now = this.now();
+    const playback: Playback = { entry: { id: randomUUID(), videoId: DEFAULT_VIDEO_ID }, instance: randomUUID(),
+      playing: false, rate: 1, position: 0, updatedAt: now };
+    const room: Room = { id, revision: 0, playback, queue: [], emptySince: now,
       members: new Map(), nextRank: 1, pending: [] };
     this.store.save(room);
     this.rooms.set(id, room);
@@ -121,7 +131,7 @@ export class Rooms {
       if (!videoId) throw new RoomError("Bitte einen gueltigen YouTube-Videolink eingeben (keine Playlist oder Livestream-URL).");
       if (room.queue.length >= 100) throw new RoomError("Die Warteschlange ist voll (maximal 100 Videos).");
       const entry = { id: randomUUID(), videoId };
-      if (!room.playback) room.playback = { entry, instance: randomUUID(), playing: true, position: 0, updatedAt: this.now() };
+      if (!room.playback) room.playback = { entry, instance: randomUUID(), playing: true, rate: 1, position: 0, updatedAt: this.now() };
       else room.queue.push(entry);
     } else {
       const index = room.queue.findIndex((entry) => entry.id === command.entryId);
@@ -188,11 +198,13 @@ export class Rooms {
     if (command.type === "load") {
       const index = room.queue.findIndex((entry) => entry.id === command.entryId);
       const [entry] = room.queue.splice(index, 1);
-      room.playback = { entry, instance: randomUUID(), playing: true, position: 0, updatedAt: this.now() };
+      room.playback = { entry, instance: randomUUID(), playing: true, rate: 1, position: 0, updatedAt: this.now() };
     } else if (command.type === "next") this.next(room);
     else if (room.playback) {
-      room.playback.position = command.position ?? positionAt(room.playback, this.now());
-      room.playback.updatedAt = this.now();
+      const now = this.now();
+      room.playback.position = (command.type === "rate" ? undefined : command.position) ?? positionAt(room.playback, now);
+      room.playback.updatedAt = now;
+      if (command.type === "rate") room.playback.rate = command.rate;
       if (command.type === "play") room.playback.playing = true;
       if (command.type === "pause") room.playback.playing = false;
     }
@@ -200,7 +212,7 @@ export class Rooms {
 
   private next(room: Room): void {
     const entry = room.queue.shift();
-    room.playback = entry ? { entry, instance: randomUUID(), playing: true, position: 0, updatedAt: this.now() } : null;
+    room.playback = entry ? { entry, instance: randomUUID(), playing: true, rate: 1, position: 0, updatedAt: this.now() } : null;
   }
 
   ended(id: string, socketId: string, instance: string, duration: number): void {

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { z } from "zod";
 import type { Playback, VideoEntry } from "../shared/protocol.js";
+import { playbackRateSchema } from "../shared/protocol.js";
 
 export interface StoredRoom {
   id: string;
@@ -19,6 +20,7 @@ const roomSchema = z.object({
     entry,
     instance: z.string().uuid(),
     playing: z.boolean(),
+    rate: playbackRateSchema.default(1),
     position: z.number().finite().nonnegative(),
     updatedAt: z.number().finite(),
   }).nullable(),

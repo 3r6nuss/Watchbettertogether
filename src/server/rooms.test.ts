@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Rooms } from "./rooms.js";
 import { Store } from "./store.js";
-import type { PlayerCommand, Reply } from "../shared/protocol.js";
+import { positionAt, type PlayerCommand, type Reply } from "../shared/protocol.js";
 
 const video = (id = "dQw4w9WgXcQ") => `https://www.youtube.com/watch?v=${id}`;
 describe("autoritative Raeume", () => {
@@ -36,14 +36,52 @@ describe("autoritative Raeume", () => {
     const id = rooms.create();
     const first = rooms.join(id, "first", "Erste");
     rooms.join(id, "second", "Zweite");
-    rooms.queue(id, "first", { type: "add", url: video() });
-    return { id, first, instance: rooms.snapshot(rooms.get(id)).playback!.instance };
+    const instance = rooms.snapshot(rooms.get(id)).playback!.instance;
+    command(id, "first", { type: "play", instance });
+    vi.advanceTimersByTime(100);
+    return { id, first, instance };
   }
   function command(id: string, socket: string, payload: PlayerCommand) {
     const results: Reply[] = [];
     rooms.player(id, socket, payload, (result) => results.push(result));
     return results;
   }
+
+  it("laedt das Standardvideo pausiert, bis jemand es startet oder ein Queue-Video waehlt", () => {
+    const id = rooms.create();
+    rooms.join(id, "first", "Erste");
+    const snapshot = () => rooms.snapshot(rooms.get(id));
+    vi.advanceTimersByTime(5000);
+    expect(snapshot().playback).toMatchObject({ entry: { videoId: "M7lc1UVf-VE" }, playing: false, position: 0 });
+    expect(positionAt(snapshot().playback!, Date.now())).toBe(0);
+    rooms.queue(id, "first", { type: "add", url: video() });
+    expect(snapshot().playback?.playing).toBe(false);
+    expect(snapshot().queue).toMatchObject([{ videoId: "dQw4w9WgXcQ" }]);
+  });
+
+  it("ersetzt beim Neustart das blockierte Startvideo bei 0:00, ohne die Queue oder laufende Videos zu aendern", () => {
+    const pausedId = rooms.create();
+    const playedId = rooms.create();
+    rooms.join(pausedId, "first", "Gast");
+    rooms.queue(pausedId, "first", { type: "add", url: video() });
+    rooms.close();
+    const saved = store.load();
+    const paused = saved.find((room) => room.id === pausedId)!;
+    const played = saved.find((room) => room.id === playedId)!;
+    const previousInstance = paused.playback!.instance;
+    paused.playback!.entry.videoId = "y6120QOlsfU";
+    played.playback!.entry.videoId = "y6120QOlsfU";
+    played.playback!.position = 12;
+    store.save(paused);
+    store.save(played);
+    rooms = new Rooms(store, () => {});
+    const restored = rooms.snapshot(rooms.get(pausedId));
+    expect(restored.playback).toMatchObject({ entry: { videoId: "M7lc1UVf-VE" }, playing: false, position: 0 });
+    expect(restored.playback?.instance).not.toBe(previousInstance);
+    expect(restored.queue).toEqual(paused.queue);
+    expect(rooms.snapshot(rooms.get(playedId)).playback).toMatchObject({ entry: { videoId: "y6120QOlsfU" }, position: 12 });
+    expect(store.load().find((room) => room.id === pausedId)?.playback).toEqual(restored.playback);
+  });
 
   it("priorisiert Join-Rang trotz umgekehrter Eingangsreihenfolge und erlaubt spaetere Alleinsteuerung", () => {
     const { id, instance } = setup();
@@ -85,6 +123,21 @@ describe("autoritative Raeume", () => {
     vi.advanceTimersByTime(100);
     expect(loser[0].ok).toBe(false);
     expect(rooms.snapshot(rooms.get(id)).playback).toMatchObject({ playing: false, position: 15 });
+  });
+
+  it("verankert Tempowechsel ohne Positionssprung und startet das naechste Video mit 1x", () => {
+    const { id, instance } = setup();
+    vi.advanceTimersByTime(900);
+    const rate = command(id, "second", { type: "rate", instance, rate: 2 });
+    vi.advanceTimersByTime(100);
+    expect(rate[0].ok).toBe(true);
+    const playback = () => rooms.snapshot(rooms.get(id)).playback!;
+    expect(playback()).toMatchObject({ rate: 2, position: 1 });
+    vi.advanceTimersByTime(2000);
+    expect(positionAt(playback(), Date.now())).toBe(5);
+    rooms.queue(id, "first", { type: "add", url: video("aqz-KE-bpKQ") });
+    rooms.ended(id, "first", instance, 6);
+    expect(playback()).toMatchObject({ rate: 1, position: 0 });
   });
 
   it("erhaelt Rang beim kurzen Reconnect, aber nicht nach Ablauf oder bewusstem Verlassen", () => {
@@ -141,7 +194,7 @@ describe("autoritative Raeume", () => {
     expect(() => rooms.queue(other, "first", { type: "add", url: video() })).toThrow("erneut beitreten");
     for (let i = 0; i < 3; i++) rooms.join(id, `more${i}`, "Gast");
     expect(() => rooms.join(id, "sixth", "Gast")).toThrow("5 Teilnehmer");
-    expect(rooms.snapshot(rooms.get(other)).playback).toBeNull();
+    expect(rooms.snapshot(rooms.get(other)).playback).toMatchObject({ playing: false, position: 0 });
   });
 
   it("stellt gespeicherte Raeume pausiert wieder her und laesst Leerstand ueber Neustarts ablaufen", () => {
@@ -151,7 +204,9 @@ describe("autoritative Raeume", () => {
     const original = new Rooms(disk, () => {});
     const id = original.create();
     original.join(id, "first", "Gast");
-    original.queue(id, "first", { type: "add", url: video() });
+    const instance = original.snapshot(original.get(id)).playback!.instance;
+    original.player(id, "first", { type: "play", instance }, () => {});
+    vi.advanceTimersByTime(100);
     original.queue(id, "first", { type: "add", url: video("aqz-KE-bpKQ") });
     vi.advanceTimersByTime(5000);
     original.disconnect(id, "first");

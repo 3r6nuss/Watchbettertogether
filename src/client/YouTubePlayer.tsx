@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { positionAt, type Playback, type PlayerCommand } from "../shared/protocol";
+import { playbackRateSchema, positionAt, type Playback, type PlayerCommand } from "../shared/protocol";
 
 declare global {
   interface Window { onYouTubeIframeAPIReady: () => void }
@@ -30,6 +30,7 @@ interface Props {
   ended: (instance: string, duration: number) => void;
   command: (command: PlayerCommand) => void;
   onTitle: (instance: string, title: string) => void;
+  onDuration: (instance: string, duration: number) => void;
 }
 
 export function YouTubePlayer(props: Props) {
@@ -47,23 +48,25 @@ export function YouTubePlayer(props: Props) {
   const [blocked, setBlocked] = useState<false | "muted" | "paused">(false);
   const [hint, setHint] = useState("");
   const [status, setStatus] = useState("YouTube wird geladen ...");
+  const [unavailableRate, setUnavailableRate] = useState(false);
 
   useEffect(() => {
     let disposed = false;
     let autoplayTimer: ReturnType<typeof setTimeout> | undefined;
     let controlTimer: ReturnType<typeof setTimeout> | undefined;
-    let sample: { position: number; at: number; state: number } | null = null;
+    let sample: { position: number; at: number; state: number; rate: number } | null = null;
     let expectedState: { state: number; until: number } | null = null;
-    let expectedSeek: { position: number; playing: boolean; at: number; until: number } | null = null;
+    let expectedSeek: { position: number; speed: number; at: number; until: number } | null = null;
     let localUntil = 0;
     let autoMuted = false;
     let unmuteGuardUntil = 0;
+    let loadingRate = false;
     let retry: { instance: string | null; count: number } = { instance: null, count: 0 };
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const apply = (state: number, action: () => void, position?: number) => {
       const at = performance.now();
       expectedState = { state, until: at + 5000 };
-      if (position !== undefined) expectedSeek = { position, playing: state === YT.PlayerState.PLAYING, at, until: at + 5000 };
+      if (position !== undefined) expectedSeek = { position, speed: state === YT.PlayerState.PLAYING ? latest.current.playback?.rate ?? 1 : 0, at, until: at + 5000 };
       sample = null;
       action();
     };
@@ -71,7 +74,7 @@ export function YouTubePlayer(props: Props) {
       const yt = player.current;
       const { playback, connected } = latest.current;
       if (!yt || !ready.current) return;
-      const current = { position: yt.getCurrentTime(), at: performance.now(), state: yt.getPlayerState() };
+      const current = { position: yt.getCurrentTime(), at: performance.now(), state: yt.getPlayerState(), rate: yt.getPlaybackRate() || 1 };
       const previous = sample;
       sample = current;
       if (!connected || !playback || loadedInstance.current !== playback.instance ||
@@ -97,11 +100,11 @@ export function YouTubePlayer(props: Props) {
         expectedState = null;
       }
       if (expectedSeek) {
-        const target = expectedSeek.position + (expectedSeek.playing ? (current.at - expectedSeek.at) / 1000 : 0);
+        const target = expectedSeek.position + expectedSeek.speed * (current.at - expectedSeek.at) / 1000;
         if (Math.abs(current.position - target) < 0.75 || current.at >= expectedSeek.until) expectedSeek = null;
       }
       if (!previous) return;
-      const elapsed = previous.state === YT.PlayerState.PLAYING ? (current.at - previous.at) / 1000 : 0;
+      const elapsed = previous.state === YT.PlayerState.PLAYING ? (current.at - previous.at) / 1000 * previous.rate : 0;
       // The IFrame API has no seek event, so detect discontinuities in sampled playback time.
       const sought = !suppressSeek && Math.abs(current.position - previous.position - elapsed) > 0.75;
       const stable = current.state === YT.PlayerState.PLAYING || current.state === YT.PlayerState.PAUSED;
@@ -157,6 +160,19 @@ export function YouTubePlayer(props: Props) {
         }
       }, 1500);
     };
+    const syncRate = () => {
+      const yt = player.current;
+      const { playback, connected } = latest.current;
+      if (!yt || !connected || !playback || loadedInstance.current !== playback.instance ||
+          failedInstance.current === playback.instance || yt.getVideoData()?.video_id !== playback.entry.videoId) return;
+      const rates = yt.getAvailablePlaybackRates();
+      if (!rates?.length) return;
+      const supported = rates.includes(playback.rate);
+      setUnavailableRate(!supported);
+      const target = supported ? playback.rate : 1;
+      loadingRate = false;
+      if (rates.includes(target) && yt.getPlaybackRate() !== target) yt.setPlaybackRate(target);
+    };
     const sync = () => {
       const yt = player.current;
       const { playback, connected, serverNow } = latest.current;
@@ -171,6 +187,7 @@ export function YouTubePlayer(props: Props) {
         if (loadedInstance.current !== null) apply(YT.PlayerState.UNSTARTED, () => yt.stopVideo());
         loadedInstance.current = null;
         setBlocked(false);
+        setUnavailableRate(false);
         setStatus("Fuege einen YouTube-Link hinzu.");
         return;
       }
@@ -181,6 +198,9 @@ export function YouTubePlayer(props: Props) {
         reportedEnd.current = null;
         setError("");
         setBlocked(false);
+        setUnavailableRate(false);
+        localUntil = 0;
+        loadingRate = true;
         const video = { videoId: playback.entry.videoId, startSeconds: target };
         clearTimeout(controlTimer);
         if (playback.playing) {
@@ -192,8 +212,10 @@ export function YouTubePlayer(props: Props) {
       }
       if (failedInstance.current === playback.instance) return;
       if (performance.now() < localUntil) return;
+      syncRate();
       const state = yt.getPlayerState();
       const duration = yt.getDuration();
+      if (duration > 0 && yt.getVideoData()?.video_id === playback.entry.videoId) latest.current.onDuration(playback.instance, duration);
       if (state === YT.PlayerState.ENDED && playback.playing && reportedEnd.current !== playback.instance &&
           duration > 0 && target >= duration - 1.5) {
         reportedEnd.current = playback.instance;
@@ -260,6 +282,7 @@ export function YouTubePlayer(props: Props) {
               if (autoMuted && !event.target.isMuted()) autoMuted = false;
               setBlocked(autoMuted ? "muted" : false);
             }
+            if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.CUED) syncRate();
             observe();
             if (event.data !== YT.PlayerState.ENDED) return;
             const playback = latest.current.playback;
@@ -270,6 +293,18 @@ export function YouTubePlayer(props: Props) {
               reportedEnd.current = playback.instance;
               latest.current.ended(playback.instance, duration);
             }
+          },
+          onPlaybackRateChange: (event) => {
+            const { playback, connected } = latest.current;
+            if (disposed || loadingRate || !ready.current || !connected || !playback || loadedInstance.current !== playback.instance ||
+                failedInstance.current === playback.instance || event.target.getVideoData()?.video_id !== playback.entry.videoId) return;
+            const rate = playbackRateSchema.safeParse(event.data);
+            if (!rate.success || rate.data === playback.rate ||
+                (rate.data === 1 && !event.target.getAvailablePlaybackRates()?.includes(playback.rate))) return;
+            // Loading a video resets YouTube's rate; only share changes made in its focused player.
+            if (!(document.activeElement instanceof HTMLIFrameElement) || !host.current?.contains(document.activeElement)) return;
+            localUntil = performance.now() + 1500;
+            latest.current.command({ type: "rate", instance: playback.instance, rate: rate.data });
           },
           onError: (event) => {
             if (disposed) return;
@@ -317,7 +352,7 @@ export function YouTubePlayer(props: Props) {
 
   useEffect(() => { resetSyncRef.current(); }, [
     props.playback?.instance, props.playback?.playing, props.playback?.position,
-    props.playback?.updatedAt, props.connected,
+    props.playback?.updatedAt, props.playback?.rate, props.connected,
   ]);
 
   useEffect(() => {
@@ -328,6 +363,8 @@ export function YouTubePlayer(props: Props) {
       const data = player.current?.getVideoData();
       if (current?.instance !== instance || current.entry.videoId !== data?.video_id || !data.title.trim()) return;
       latest.current.onTitle(instance, data.title);
+      const duration = player.current?.getDuration();
+      if (duration && duration > 0) latest.current.onDuration(instance, duration);
       clearInterval(timer);
     }, 500);
     return () => clearInterval(timer);
@@ -338,12 +375,13 @@ export function YouTubePlayer(props: Props) {
   };
   return <>
     <div className="video-frame" ref={host} />
-    <p className="player-status" aria-live="polite">{status}</p>
+    <p className={`player-status${props.playback ? " sr-only" : ""}`} aria-live="polite">{status}</p>
     {blocked && props.connected && props.playback?.playing && <button className="primary" onClick={unlock}>
       {blocked === "muted" ? "Ton einschalten" : "Wiedergabe in diesem Browser freigeben"}</button>}
     {hint && blocked === "muted" && <p className="player-hint">{hint}</p>}
-    {error && <p className="error" role="alert">{error}</p>}
-    <label className="volume">Deine Lautstaerke <input aria-label="Lautstaerke" type="range" min="0" max="100" defaultValue="75"
-      onChange={(event) => { if (ready.current) player.current?.setVolume(Number(event.target.value)); }} /></label>
+    {unavailableRate && <p className="player-hint" role="status">YouTube bietet das gewählte Raumtempo auf diesem Gerät nicht an.</p>}
+    {error && <p className="error" role="alert">{error} {props.playback && failedInstance.current === props.playback.instance &&
+      <a href={`https://www.youtube.com/watch?v=${props.playback.entry.videoId}`} target="_blank" rel="noreferrer">Auf YouTube ansehen</a>}
+    </p>}
   </>;
 }

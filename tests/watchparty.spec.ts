@@ -13,6 +13,19 @@ async function joinRoom(page: Page, path: string, name: string) {
   await page.getByLabel("Dein Anzeigename").fill(name);
   await page.getByRole("button", { name: "Raum beitreten" }).click();
   await expect(page.getByText("Verbunden", { exact: true })).toBeVisible();
+  const invite = page.getByRole("dialog", { name: "Freunde einladen" });
+  if (await invite.isVisible()) await invite.getByRole("button", { name: "Einladung schließen" }).click();
+}
+async function seekRoom(page: Page, position: number) {
+  const slider = page.getByRole("slider", { name: "Videoposition" });
+  await slider.focus();
+  await slider.fill(String(position));
+  await slider.press("Tab");
+}
+async function addAndPlay(page: Page, id: string) {
+  await page.getByLabel("YouTube-Link").fill(url(id));
+  await page.getByRole("button", { name: "Hinzufuegen" }).click();
+  await page.locator(".queue li").filter({ hasText: id }).getByRole("button", { name: "Jetzt spielen" }).click();
 }
 
 test("zwei Browser steuern Player und Queue, korrigieren Drift und zeigen Autoplay/Fehler", async ({ browser, request }) => {
@@ -29,8 +42,7 @@ test("zwei Browser steuern Player und Queue, korrigieren Drift und zeigen Autopl
     await joinRoom(a, `/room/${roomId}`, "Anna");
     await joinRoom(b, `/room/${roomId}`, "Ben");
     await expect(a.getByRole("heading", { name: "Teilnehmer (2/5)" })).toBeVisible();
-    await a.getByLabel("YouTube-Link").fill(url("dQw4w9WgXcQ"));
-    await a.getByRole("button", { name: "Hinzufuegen" }).click();
+    await addAndPlay(a, "dQw4w9WgXcQ");
     const currentVideoLink = b.locator(".current-video a");
     await expect(currentVideoLink).toHaveText("Titel dQw4w9WgXcQ");
     await expect(currentVideoLink).toHaveAttribute("href", url("dQw4w9WgXcQ"));
@@ -45,8 +57,16 @@ test("zwei Browser steuern Player und Queue, korrigieren Drift und zeigen Autopl
     await expect.poll(async () => Math.abs(await a.evaluate<number>("window.__player.getCurrentTime()") -
       await b.evaluate<number>("window.__player.getCurrentTime()"))).toBeLessThan(1);
 
-    await b.getByLabel("Position in Sekunden").fill("30");
-    await b.getByRole("button", { name: "Spulen", exact: true }).click();
+    const tempo = (page: Page) => page.getByLabel("Wiedergabegeschwindigkeit für alle");
+    await tempo(b).selectOption("2");
+    for (const page of [a, b]) await expect.poll(() => page.evaluate<number>("window.__player.getPlaybackRate()")).toBe(2);
+    const atDoubleSpeed = await a.evaluate<number>("window.__player.getCurrentTime()");
+    await expect.poll(() => a.evaluate<number>("window.__player.getCurrentTime()"), { timeout: 2000 }).toBeGreaterThan(atDoubleSpeed + 2);
+    await a.frameLocator(".video-frame iframe").getByRole("button", { name: "YouTube 1,5×" }).click();
+    await expect(tempo(b)).toHaveValue("1.5");
+    await expect.poll(() => b.evaluate<number>("window.__player.getPlaybackRate()")).toBe(1.5);
+
+    await seekRoom(b, 30);
     await expect.poll(() => a.evaluate<number>("window.__player.getCurrentTime()")).toBeGreaterThanOrEqual(30);
     await a.evaluate("window.__player.drift(-4)");
     await expect.poll(async () => Math.abs(await a.evaluate<number>("window.__player.getCurrentTime()") -
@@ -67,7 +87,7 @@ test("zwei Browser steuern Player und Queue, korrigieren Drift und zeigen Autopl
     await expect(a.locator(".queue li")).toHaveCount(2);
     await a.getByRole("button", { name: "Video 2 nach oben" }).click();
     await expect(b.locator(".queue li").first()).toContainText("M7lc1UVf-VE");
-    await b.getByRole("button", { name: "Naechstes Video" }).click();
+    await b.getByRole("button", { name: "Nächstes Video" }).click();
     await expect(a.locator(".current-video a")).toHaveText("Titel M7lc1UVf-VE");
     await expect(b.locator(".queue li")).toHaveCount(1);
 
@@ -76,15 +96,15 @@ test("zwei Browser steuern Player und Queue, korrigieren Drift und zeigen Autopl
     await expect.poll(() => b.evaluate<number>("window.__player.getPlayerState()")).toBe(2);
     await b.frameLocator(".video-frame iframe").getByRole("button", { name: "YouTube Play/Pause" }).click();
     await expect(a.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-    await b.getByLabel("Position in Sekunden").fill("120");
-    await b.getByRole("button", { name: "Spulen", exact: true }).click();
+    await seekRoom(b, 120);
     await expect(a.locator(".current-video a")).toHaveText("Titel aqz-KE-bpKQ");
     await expect(b.locator(".queue li")).toHaveCount(0);
     await a.getByLabel("YouTube-Link").fill(url("yyyyyyyyyyy"));
     await a.getByRole("button", { name: "Hinzufuegen" }).click();
     await expect(b.locator(".queue li")).toHaveCount(1);
-    await a.getByRole("button", { name: "Naechstes Video" }).click();
+    await a.getByRole("button", { name: "Nächstes Video" }).click();
     await expect(b.getByRole("alert")).toContainText("YouTube-Fehler 100");
+    await expect(b.getByRole("link", { name: "Auf YouTube ansehen" })).toHaveAttribute("href", url("yyyyyyyyyyy"));
     await b.getByRole("button", { name: "Raum verlassen" }).click();
     await expect(a.getByRole("heading", { name: "Teilnehmer (1/5)" })).toBeVisible();
     await a.screenshot({ path: "test-results/room-desktop.png", fullPage: true });
@@ -116,8 +136,7 @@ test("native YouTube-Controls synchronisieren auch pausiertes Spulen; Vollbild u
     await b.addInitScript(() => Reflect.set(window, "__strictAutoplay", true));
     await joinRoom(a, `/room/${roomId}`, "Anna");
     await joinRoom(b, `/room/${roomId}`, "Ben");
-    await a.getByLabel("YouTube-Link").fill(url("dQw4w9WgXcQ"));
-    await a.getByRole("button", { name: "Hinzufuegen" }).click();
+    await addAndPlay(a, "dQw4w9WgXcQ");
     const controls = a.frameLocator(".video-frame iframe");
     await expect(b.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
     await expect(controls.getByRole("button", { name: "YouTube Play/Pause" })).toBeVisible();
@@ -128,6 +147,7 @@ test("native YouTube-Controls synchronisieren auch pausiertes Spulen; Vollbild u
     await expect.poll(() => a.evaluate<number>("window.__player.getPlayerState()")).toBe(1);
     await expect.poll(() => b.evaluate<number>("window.__player.getPlayerState()")).toBe(1);
     expect(await b.evaluate<boolean>("window.__player.isMuted()")).toBe(true);
+    await expect.poll(() => a.evaluate<number>("window.__player.getCurrentTime()")).toBeGreaterThan(1);
     await controls.getByLabel("YouTube Position").fill("45");
     await expect.poll(() => b.evaluate<number>("window.__player.getCurrentTime()")).toBeGreaterThanOrEqual(45);
     await controls.getByRole("button", { name: "YouTube Play/Pause" }).click();
@@ -148,7 +168,7 @@ test("native YouTube-Controls synchronisieren auch pausiertes Spulen; Vollbild u
     await expect.poll(() => b.evaluate<number>("window.__player.getCurrentTime()")).toBeCloseTo(65, 0);
     await expect(a.getByRole("alert")).toHaveCount(0);
     await expect(b.getByRole("alert")).toHaveCount(0);
-    expect(commands.filter((command) => command.startsWith("a:"))).toHaveLength(4);
+    expect(commands.filter((command) => command.startsWith("a:") && !command.includes('"type":"load"'))).toHaveLength(4);
     expect(commands.filter((command) => command.startsWith("b:"))).toEqual([]);
   } finally { await first.close(); await second.close(); }
 });
@@ -158,8 +178,7 @@ test("voruebergehender YouTube-Fehler 5 laedt neu und bleibt synchron", async ({
   const { roomId } = await response.json();
   await mock(page);
   await joinRoom(page, `/room/${roomId}`, "Anna");
-  await page.getByLabel("YouTube-Link").fill(url("zzzzzzzzzzz"));
-  await page.getByRole("button", { name: "Hinzufuegen" }).click();
+  await addAndPlay(page, "zzzzzzzzzzz");
   await expect.poll(() => page.evaluate<boolean>("Boolean(window.__transientFailed)")).toBe(true);
   await expect.poll(() => page.evaluate<number>("window.__player.getPlayerState()"), { timeout: 5000 }).toBe(1);
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -174,8 +193,7 @@ test("spaeter Beitritt mit langsamem Laden holt die Raumposition ein", async ({ 
   await mock(b);
   await b.addInitScript(() => { Reflect.set(window, "__slowLoad", 6000); });
   await joinRoom(a, `/room/${roomId}`, "Anna");
-  await a.getByLabel("YouTube-Link").fill(url("dQw4w9WgXcQ"));
-  await a.getByRole("button", { name: "Hinzufuegen" }).click();
+  await addAndPlay(a, "dQw4w9WgXcQ");
   await expect.poll(() => a.evaluate<number>("window.__player.getPlayerState()")).toBe(1);
   await a.waitForTimeout(3000);
   await joinRoom(b, `/room/${roomId}`, "Ben");
@@ -193,14 +211,29 @@ test("spaeter Beitritt mit langsamem Laden holt die Raumposition ein", async ({ 
 test("Startseite erstellt einen privaten Raum und lehnt ungueltige Links sichtbar ab", async ({ page }) => {
   await mock(page);
   await page.goto("/");
+  await expect(page.getByLabel("Dein Anzeigename")).toHaveAttribute("placeholder", "Gast");
   await page.getByLabel("Dein Anzeigename").fill("Test");
   await page.getByRole("button", { name: "Privaten Raum erstellen" }).click();
   await expect(page).toHaveURL(/\/room\/[A-Za-z0-9_-]{32}$/);
   await page.getByRole("button", { name: "Raum beitreten" }).click();
   await expect(page.getByText("Verbunden", { exact: true })).toBeVisible();
+  const invite = page.getByRole("dialog", { name: "Freunde einladen" });
+  await expect(invite.getByRole("textbox", { name: "Einladungslink" })).toHaveValue(page.url());
+  await expect(page.getByText("Test (du)")).toBeAttached();
+  await invite.getByRole("button", { name: "Einladung schließen" }).click();
+  await page.setViewportSize({ width: 360, height: 800 });
+  const frame = page.locator(".video-frame iframe");
+  await expect.poll(async () => (await frame.boundingBox())?.height).toBeGreaterThanOrEqual(200);
+  await expect(page.locator(".current-video a")).toHaveAttribute("href", url("M7lc1UVf-VE"));
+  await expect.poll(() => page.evaluate<number>("window.__player.getPlayerState()")).toBe(5);
+  await expect(page.getByRole("button", { name: "Abspielen", exact: true })).toBeVisible();
+  await expect(page.getByText(/Das erste Video startet automatisch/)).toHaveCount(0);
   await page.getByLabel("YouTube-Link").fill("https://example.com/watch?v=dQw4w9WgXcQ");
   await page.getByRole("button", { name: "Hinzufuegen" }).click();
   await expect(page.getByRole("alert")).toContainText("gueltigen YouTube");
+  await expect(page.getByRole("search")).toHaveCount(0);
+  await addAndPlay(page, "dQw4w9WgXcQ");
+  await expect(page.locator(".current-video a")).toHaveText("Titel dQw4w9WgXcQ");
 });
 
 test("echte YouTube-Wiedergabe in zwei Browsern (optional)", async ({ browser, request }) => {
@@ -221,6 +254,7 @@ test("echte YouTube-Wiedergabe in zwei Browsern (optional)", async ({ browser, r
   try {
     for (const page of [a, b]) await page.addInitScript(() => {
       let state = -1;
+      let rate = 1;
       window.addEventListener("message", (event) => {
         const frame = document.querySelector<HTMLIFrameElement>(".video-frame iframe");
         if (event.source !== frame?.contentWindow || event.origin !== "https://www.youtube.com" ||
@@ -228,28 +262,30 @@ test("echte YouTube-Wiedergabe in zwei Browsern (optional)", async ({ browser, r
         const data = JSON.parse(event.data);
         if (data.event !== "infoDelivery") return;
         if (typeof data.info?.playerState === "number") state = data.info.playerState;
+        if (typeof data.info?.playbackRate === "number") rate = data.info.playbackRate;
         if (typeof data.info?.currentTime === "number") {
-          Reflect.set(window, "__youtubeSample", { position: data.info.currentTime, state, at: Date.now() });
+          Reflect.set(window, "__youtubeSample", { position: data.info.currentTime, state, rate, at: Date.now() });
         }
       });
     });
     await joinRoom(a, `/room/${roomId}`, "Anna");
     await joinRoom(b, `/room/${roomId}`, "Ben");
-    await a.getByLabel("YouTube-Link").fill(url("M7lc1UVf-VE"));
-    await a.getByRole("button", { name: "Hinzufuegen" }).click();
     await expect(a.locator(".video-frame iframe")).toBeVisible({ timeout: 20000 });
     const currentVideoLink = a.locator(".current-video a");
-    await expect(currentVideoLink).not.toHaveText("M7lc1UVf-VE", { timeout: 20000 });
     await expect(currentVideoLink).toHaveAttribute("href", url("M7lc1UVf-VE"));
+    for (const page of [a, b]) await expect(page.getByRole("button", { name: "Abspielen", exact: true })).toBeVisible();
+    const native = a.frameLocator(".video-frame iframe");
+    await a.getByRole("button", { name: "Abspielen", exact: true }).click();
+    await expect(currentVideoLink).not.toHaveText("M7lc1UVf-VE", { timeout: 20000 });
     await expect(b.getByRole("button", { name: "Pause", exact: true })).toBeVisible({ timeout: 20000 });
     for (const page of [a, b]) {
       const unblock = page.getByRole("button", { name: /Ton einschalten|Wiedergabe in diesem Browser freigeben/ });
-      await expect(unblock.or(page.getByText("Gemeinsame Wiedergabe", { exact: true }))).toBeVisible();
+      await expect.poll(async () => await unblock.isVisible() ||
+        (await page.locator(".player-status").textContent()) === "Gemeinsame Wiedergabe").toBe(true);
       if (await unblock.isVisible()) await unblock.click();
     }
-    await a.getByLabel("Position in Sekunden").fill("30");
-    await a.getByRole("button", { name: "Spulen", exact: true }).click();
-    const sample = (page: Page) => page.evaluate<{ position: number; state: number; at: number } | null>("window.__youtubeSample || null");
+    await seekRoom(a, 30);
+    const sample = (page: Page) => page.evaluate<{ position: number; state: number; rate: number; at: number } | null>("window.__youtubeSample || null");
     let positions: number[] = [];
     await expect.poll(async () => {
       const [x, y] = await Promise.all([sample(a), sample(b)]);
@@ -265,8 +301,16 @@ test("echte YouTube-Wiedergabe in zwei Browsern (optional)", async ({ browser, r
       return x.position > initial[0] + 1 && y.position > initial[1] + 1 ? Math.abs(x.position - y.position) : Infinity;
     }, { timeout: 20000 }).toBeLessThan(1);
     console.log(`Echte YouTube-Positionen: ${positions.map((value) => value.toFixed(3)).join(" / ")} s; Abweichung ${Math.abs(positions[0] - positions[1]).toFixed(3)} s.`);
+    const tempo = a.getByLabel("Wiedergabegeschwindigkeit für alle");
+    await tempo.selectOption("2");
+    await expect.poll(async () => [
+      (await sample(a))?.rate, (await sample(b))?.rate,
+    ]).toEqual([2, 2]);
+    await tempo.selectOption("1");
+    await expect.poll(async () => [
+      (await sample(a))?.rate, (await sample(b))?.rate,
+    ]).toEqual([1, 1]);
     await a.bringToFront();
-    const native = a.frameLocator(".video-frame iframe");
     const showControls = async () => {
       await native.locator("body").hover();
       const show = native.getByRole("button", { name: "Show player controls", exact: true });
@@ -284,7 +328,10 @@ test("echte YouTube-Wiedergabe in zwei Browsern (optional)", async ({ browser, r
     await expect.poll(async () => {
       const [x, y] = await Promise.all([sample(a), sample(b)]);
       return x && y && x.position > 50 && y.position > 50 ? Math.abs(x.position - y.position) : Infinity;
-    }).toBeLessThan(1);
+    }).toBeLessThan(1).catch(async (error: unknown) => {
+      console.error("Native Seek:", await sample(a), await sample(b), commands);
+      throw error;
+    });
     await showControls();
     await native.locator(".ytp-fullscreen-button, .fullscreen-icon").click({ timeout: 10000 });
     await expect.poll(() => a.evaluate(() => document.fullscreenElement?.tagName)).toBe("IFRAME");
