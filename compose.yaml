@@ -1,0 +1,22 @@
+services:
+  watchbettertogether:
+    image: watchbettertogether:0.1.0
+    restart: unless-stopped
+    init: true
+    environment:
+      APP_ORIGIN: ${APP_ORIGIN:?Setze APP_ORIGIN auf deine HTTPS-Domain}
+      TRUST_PROXY: "1"
+      MAX_ROOMS: "100"
+    volumes:
+      - watchparty-data:/app/data
+    networks:
+      - proxy
+    stop_grace_period: 15s
+
+volumes:
+  watchparty-data:
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}
