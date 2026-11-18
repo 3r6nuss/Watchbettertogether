@@ -105,6 +105,18 @@ test("zwei Browser steuern Player und Queue, korrigieren Drift und zeigen Autopl
     await a.getByRole("button", { name: "Nächstes Video" }).click();
     await expect(b.getByRole("alert")).toContainText("YouTube-Fehler 100");
     await expect(b.getByRole("link", { name: "Auf YouTube ansehen" })).toHaveAttribute("href", url("yyyyyyyyyyy"));
+    await b.getByLabel("YouTube-Link").fill(url("xxxxxxxxxxx"));
+    await b.getByRole("button", { name: "Hinzufuegen" }).click();
+    await b.getByRole("button", { name: "Nächstes Video" }).click();
+    await expect(a.getByRole("alert")).toContainText("Dieses Video darf nicht eingebettet werden.");
+    await expect(a.getByRole("link", { name: "Auf YouTube ansehen" })).toHaveAttribute("href", url("xxxxxxxxxxx"));
+    await b.getByLabel("YouTube-Link").fill(url("M7lc1UVf-VE"));
+    await b.getByRole("button", { name: "Hinzufuegen" }).click();
+    await expect(a.locator(".queue li")).toHaveCount(1);
+    await expect(a.getByRole("button", { name: /Ton einschalten|Wiedergabe in diesem Browser freigeben/ })).toHaveCount(0);
+    await a.getByRole("button", { name: "Für alle überspringen" }).click();
+    await expect(b.locator(".current-video a")).toHaveAttribute("href", url("M7lc1UVf-VE"));
+    await expect(b.getByRole("alert")).toHaveCount(0);
     await b.getByRole("button", { name: "Raum verlassen" }).click();
     await expect(a.getByRole("heading", { name: "Teilnehmer (1/5)" })).toBeVisible();
     await a.screenshot({ path: "test-results/room-desktop.png", fullPage: true });

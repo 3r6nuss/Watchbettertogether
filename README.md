@@ -150,6 +150,9 @@ der Ton laesst sich mit **Ton einschalten** oder dem Lautsprecher-Symbol im
 YouTube-Player aktivieren. Eine vom Browser erzwungene Pause wird nicht an andere
 Teilnehmer weitergegeben. Fehlerhafte,
 gesperrte oder nicht einbettbare Videos werden angezeigt, nicht umgangen.
+Bei einer Einbettungssperre kann man das Video separat auf YouTube ansehen
+oder es fuer den ganzen Raum ueberspringen. Die App ueberspringt es nicht
+automatisch, weil ein Video bei anderen Teilnehmern funktionieren kann.
 YouTube muss vom Browser erreichbar sein; auch Contentblocker koennen die
 Einbettung verhindern.
 

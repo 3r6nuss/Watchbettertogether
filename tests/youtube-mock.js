@@ -68,8 +68,11 @@
       this.rate = 1;
       this.position = video.startSeconds;
       this.at = Date.now();
-      this.bad = video.videoId === "yyyyyyyyyyy";
-      if (this.bad) setTimeout(() => this.config.events.onError({ data: 100, target: this }), 10);
+      this.bad = video.videoId === "yyyyyyyyyyy" || video.videoId === "xxxxxxxxxxx";
+      if (this.bad) {
+        const code = video.videoId === "xxxxxxxxxxx" ? 150 : 100;
+        setTimeout(() => this.config.events.onError({ data: code, target: this }), 10);
+      }
       if (video.videoId === "zzzzzzzzzzz" && !window.__transientFailed) {
         window.__transientFailed = true;
         setTimeout(() => this.config.events.onError({ data: 5, target: this }), 10);

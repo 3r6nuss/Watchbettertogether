@@ -45,6 +45,7 @@ export function YouTubePlayer(props: Props) {
   const resetSyncRef = useRef<() => void>(() => {});
   const unlockRef = useRef<() => void>(() => {});
   const [error, setError] = useState("");
+  const [embedBlockedInstance, setEmbedBlockedInstance] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<false | "muted" | "paused">(false);
   const [hint, setHint] = useState("");
   const [status, setStatus] = useState("YouTube wird geladen ...");
@@ -133,7 +134,8 @@ export function YouTubePlayer(props: Props) {
     const handleBlocked = (reported = false) => {
       const yt = player.current;
       const { playback, connected, serverNow } = latest.current;
-      if (disposed || !yt || !ready.current || !connected || !playback?.playing) return;
+      if (disposed || !yt || !ready.current || !connected || !playback?.playing ||
+          loadedInstance.current !== playback.instance || failedInstance.current === playback.instance) return;
       const state = yt.getPlayerState();
       if (state === YT.PlayerState.PLAYING) return;
       if (!autoMuted && !yt.isMuted()) {
@@ -186,6 +188,9 @@ export function YouTubePlayer(props: Props) {
       if (!playback) {
         if (loadedInstance.current !== null) apply(YT.PlayerState.UNSTARTED, () => yt.stopVideo());
         loadedInstance.current = null;
+        if (failedInstance.current !== null) setError("");
+        failedInstance.current = null;
+        setEmbedBlockedInstance(null);
         setBlocked(false);
         setUnavailableRate(false);
         setStatus("Fuege einen YouTube-Link hinzu.");
@@ -195,6 +200,7 @@ export function YouTubePlayer(props: Props) {
       if (loadedInstance.current !== playback.instance) {
         loadedInstance.current = playback.instance;
         failedInstance.current = null;
+        setEmbedBlockedInstance(null);
         reportedEnd.current = null;
         setError("");
         setBlocked(false);
@@ -248,7 +254,7 @@ export function YouTubePlayer(props: Props) {
     unlockRef.current = () => {
       const yt = player.current;
       const { playback, connected, serverNow } = latest.current;
-      if (!yt || !ready.current || !playback || !connected) return;
+      if (!yt || !ready.current || !playback || !connected || failedInstance.current === playback.instance) return;
       const target = positionAt(playback, serverNow());
       if (autoMuted) unmuteGuardUntil = performance.now() + 3000;
       setHint("");
@@ -309,6 +315,10 @@ export function YouTubePlayer(props: Props) {
           onError: (event) => {
             if (disposed) return;
             const instance = loadedInstance.current;
+            if (!instance || latest.current.playback?.instance !== instance) return;
+            clearTimeout(autoplayTimer);
+            clearTimeout(controlTimer);
+            setBlocked(false);
             // Error 5 is a transient HTML5 playback error; reload at the room position instead of giving up.
             if (event.data === 5 && instance) {
               if (retry.instance !== instance) retry = { instance, count: 0 };
@@ -322,7 +332,11 @@ export function YouTubePlayer(props: Props) {
               }
             }
             failedInstance.current = instance;
-            setError(event.data === 5
+            const embedBlocked = event.data === 101 || event.data === 150;
+            setEmbedBlockedInstance(embedBlocked ? instance : null);
+            setError(embedBlocked
+              ? "Dieses Video darf nicht eingebettet werden. Auf YouTube kannst du es separat ansehen."
+              : event.data === 5
               ? "YouTube-Fehler 5: Das Video konnte in diesem Browser nicht abgespielt werden. Bitte die Seite neu laden."
               : `YouTube-Fehler ${event.data}: Video nicht verfuegbar oder nicht einbettbar. Bitte ein anderes Video waehlen.`);
           },
@@ -373,15 +387,21 @@ export function YouTubePlayer(props: Props) {
   const unlock = () => {
     unlockRef.current();
   };
+  const playback = props.playback;
+  const embedBlocked = playback !== null && playback.instance === embedBlockedInstance;
   return <>
     <div className="video-frame" ref={host} />
     <p className={`player-status${props.playback ? " sr-only" : ""}`} aria-live="polite">{status}</p>
-    {blocked && props.connected && props.playback?.playing && <button className="primary" onClick={unlock}>
+    {blocked && !error && props.connected && playback?.playing && <button className="primary" onClick={unlock}>
       {blocked === "muted" ? "Ton einschalten" : "Wiedergabe in diesem Browser freigeben"}</button>}
-    {hint && blocked === "muted" && <p className="player-hint">{hint}</p>}
+    {hint && !error && blocked === "muted" && <p className="player-hint">{hint}</p>}
     {unavailableRate && <p className="player-hint" role="status">YouTube bietet das gewählte Raumtempo auf diesem Gerät nicht an.</p>}
-    {error && <p className="error" role="alert">{error} {props.playback && failedInstance.current === props.playback.instance &&
-      <a href={`https://www.youtube.com/watch?v=${props.playback.entry.videoId}`} target="_blank" rel="noreferrer">Auf YouTube ansehen</a>}
-    </p>}
+    {error && <div className="error">
+      <span role="alert">{error}</span>{" "}
+      {playback && failedInstance.current === playback.instance &&
+        <a href={`https://www.youtube.com/watch?v=${playback.entry.videoId}`} target="_blank" rel="noreferrer">Auf YouTube ansehen</a>}
+      {embedBlocked && <button disabled={!props.connected}
+        onClick={() => props.command({ type: "next", instance: playback.instance })}>Für alle überspringen</button>}
+    </div>}
   </>;
 }
