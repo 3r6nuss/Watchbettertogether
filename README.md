@@ -47,21 +47,18 @@ npm run test:browser
 
 Lokaler Nachweis: Raum-/Socket-/Speichertests, Produktionsbuild und zwei
 Browser mit echter YouTube-Wiedergabe wurden erfolgreich geprueft.
-Docker ist auf dem Entwicklungsrechner nicht verfuegbar; Image-Build,
-Container-Neustart und deine externe HTTPS-/NPM-Verbindung muessen deshalb
-auf dem Zielserver geprueft werden.
+Docker ist auf dem Entwicklungsrechner nicht verfuegbar; der automatische
+Image-Build in Portainer, Container-Neustart und deine externe HTTPS-/NPM-
+Verbindung muessen deshalb auf dem Zielserver geprueft werden.
 
 ## Portainer und Nginx Proxy Manager
 
 Ein Container, eine persistente SQLite-Datenbank, kein Redis oder separater
-Datenbankserver. Das Image muss zuerst auf dem Docker-Zielserver gebaut werden
-(oder aus deiner eigenen Registry auf diesen Server geladen werden):
+Datenbankserver. Portainer baut das Image beim Deployen und bei jedem
+Stack-Update automatisch aus dem Dockerfile im Git-Repository.
 
-```sh
-docker build -t watchbettertogether:0.1.0 .
-```
-
-1. Den Inhalt von [compose.yaml](./compose.yaml) als Portainer-Stack verwenden.
+1. In Portainer einen Git-Stack fuer das Repository anlegen und als Compose-Pfad
+   `compose.yaml` im Repository-Root angeben.
 2. Stack-Variable `APP_ORIGIN` auf `https://deine-domain.example` setzen,
    **ohne abschliessenden Slash oder Pfad**.
 3. `PROXY_NETWORK` auf das vorhandene Docker-Netz von Nginx Proxy Manager setzen.
@@ -84,11 +81,11 @@ Falls NPM auf einem anderen Docker-Host laeuft, braucht es statt des gemeinsamen
 Netzes eine gezielte interne Portfreigabe mit Firewallregel fuer diesen Proxy.
 Keine uneingeschraenkte oeffentliche Freigabe des App-Ports.
 
-Updates: neues Image bauen/laden und Stack neu bereitstellen. Fuer Backups den
-Stack stoppen und das vollstaendige Datenvolume sichern (SQLite inklusive
-eventueller WAL-/SHM-Dateien). Wiederherstellung bei gestopptem Container mit
-Dateirechten fuer UID/GID 1000 (`node`). Ein Datenbankfehler wird nicht durch
-eine neue leere Datenbank verborgen.
+Updates: Stack in Portainer neu bereitstellen; dabei wird das Image neu gebaut.
+Fuer Backups den Stack stoppen und das vollstaendige Datenvolume sichern
+(SQLite inklusive eventueller WAL-/SHM-Dateien). Wiederherstellung bei
+gestopptem Container mit Dateirechten fuer UID/GID 1000 (`node`). Ein
+Datenbankfehler wird nicht durch eine neue leere Datenbank verborgen.
 Nach einem Schreibfehler werden weitere Raumbefehle gesperrt und der Healthcheck
 schlaegt fehl; der naechste Speicher-Checkpoint beendet den Prozess mit Fehler,
 damit die Container-Neustartregel greifen kann. Ursache (z.B. volles Volume)

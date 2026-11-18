@@ -1,6 +1,10 @@
 services:
   watchbettertogether:
     image: watchbettertogether:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: build
     restart: unless-stopped
     init: true
     environment:
